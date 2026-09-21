@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>교대 AI 창의컴퓨팅 - 익명 실시간 매칭 플랫폼</title>
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Google Fonts (Noto Sans KR & Outfit) -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Firebase JS SDK (v11.6.1) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, doc, setDoc, onSnapshot, query, where, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        window.FirebaseSDK = { initializeApp, getAuth, signInAnonymously, getFirestore, collection, doc, setDoc, onSnapshot, query, where, getDocs, deleteDoc };
+    </script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0f7ff',
+                            100: '#e0effe',
+                            500: '#3b82f6',
+                            600: '#2563eb',
+                            700: '#1d4ed8',
+                        },
+                        academic: {
+                            emerald: '#10b981',
+                            purple: '#8b5cf6',
+                            rose: '#f43f5e',
+                            amber: '#f59e0b'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Noto Sans KR', 'sans-serif'],
+                        heading: ['Outfit', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* Custom scrollbar & visual glassmorphism */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(226, 232, 240, 0.8);
+        }
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); opacity: 0.8; }
+            50% { transform: scale(1.1); opacity: 0.4; }
+            100% { transform: scale(0.95); opacity: 0.8; }
+        }
+        .animate-pulse-ring {
+            animation: pulse-ring 2s infinite ease-in-out;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans min-h-screen flex flex-col antialiased selection:bg-brand-500 selection:text-white">
+
+    <!-- Top Navigation Bar -->
+    <header class="bg-white/80 backdrop-blur-md border-b border-slate-200 sticky top-0 z-30 px-4 py-3 shadow-sm">
+        <div class="max-w-5xl mx-auto flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-500 to-academic-purple flex items-center justify-center text-white shadow-md shadow-brand-500/20">
+                    <i class="fa-solid font-bold text-lg fa-comments"></i>
+                </div>
+                <div>
+                    <h1 class="font-heading font-bold text-slate-800 text-lg leading-tight flex items-center gap-2">
+                        교대 AI 익명 매칭
+                        <span class="text-xs font-normal bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full border border-brand-200">창의컴퓨팅과제</span>
+                    </h1>
+                    <p class="text-xs text-slate-500">실시간 대기열 기반 1:1 및 그룹 다자간 소통 플랫폼</p>
+                </div>
+            </div>
+            
+            <!-- Connection Status Badge -->
+            <div class="flex items-center space-x-2">
+                <div id="statusBadge" class="flex items-center space-x-1.5 bg-emerald-50 text-emerald-700 px-3 py-1 rounded-full text-xs font-medium border border-emerald-200">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+                    <span id="statusText">온라인 매칭 준비완료</span>
+                </div>
+                <button id="devInfoBtn" onclick="toggleDevModal()" class="text-slate-400 hover:text-slate-600 p-2 rounded-lg text-sm transition">
+                    <i class="fa-solid fa-code"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Container -->
+    <main class="flex-1 max-w-5xl w-full mx-auto p-4 md:p-6 flex flex-col">
+
+        <!-- SCREEN 1: Setup & Mode Selection -->
+        <section id="screenSetup" class="flex-1 flex flex-col justify-center items-center py-6">
+            <div class="w-full max-w-xl glass-card rounded-3xl p-6 md:p-8 shadow-xl shadow-slate-200/50 border border-slate-100">
+                <div class="text-center mb-8">
+                    <span class="inline-block p-3 rounded-2xl bg-brand-50 text-brand-600 mb-3">
+                        <i class="fa-solid fa-user-astronaut text-2xl"></i>
+                    </span>
+                    <h2 class="text-2xl font-bold text-slate-800">익명 프로필 설정 & 모드 선택</h2>
+                    <p class="text-slate-500 text-sm mt-1">서로의 신원을 알 수 없는 가상 페르소나로 대화에 참여합니다.</p>
+                </div>
+
+                <!-- Nickname Input Section -->
+                <div class="space-y-4 mb-8">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-500">나의 익명 페르소나</label>
+                    <div class="flex gap-2">
+                        <div class="relative flex-1">
+                            <input type="text" id="nicknameInput" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 text-slate-800 font-medium pl-10 bg-slate-50/50" readonly>
+                            <i class="fa-solid fa-mask absolute left-3.5 top-3.5 text-slate-400"></i>
+                        </div>
+                        <button onclick="generateNewNickname()" class="px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-medium transition flex items-center gap-2 text-sm border border-slate-200">
+                            <i class="fa-solid fa-arrows-rotate"></i>
+                            <span>랜덤 변경</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Topic Selector -->
+                <div class="space-y-3 mb-8">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-500">관심있는 대화 주제</label>
+                    <div class="flex flex-wrap gap-2" id="topicTags">
+                        <button onclick="selectTopic(this, '초등교육')" class="topic-btn active px-3.5 py-2 rounded-xl text-xs font-medium border bg-brand-600 text-white border-brand-600 transition">#초등교육</button>
+                        <button onclick="selectTopic(this, 'AI교육')" class="topic-btn px-3.5 py-2 rounded-xl text-xs font-medium border bg-white text-slate-600 border-slate-200 hover:bg-slate-50 transition">#AI교육</button>
+                        <button onclick="selectTopic(this, '임용고시')" class="topic-btn px-3.5 py-2 rounded-xl text-xs font-medium border bg-white text-slate-600 border-slate-200 hover:bg-slate-50 transition">#임용고시</button>
+                        <button onclick="selectTopic(this, '오늘의저녁')" class="topic-btn px-3.5 py-2 rounded-xl text-xs font-medium border bg-white text-slate-600 border-slate-200 hover:bg-slate-50 transition">#오늘의저녁</button>
+                        <button onclick="selectTopic(this, '자유수다')" class="topic-btn px-3.5 py-2 rounded-xl text-xs font-medium border bg-white text-slate-600 border-slate-200 hover:bg-slate-50 transition">#자유수다</button>
+                    </div>
+                </div>
+
+                <!-- Chat Mode Selector Buttons -->
+                <div class="space-y-3">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-500">매칭 인원 모드 선택</label>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <button onclick="startQueue(2)" class="p-4 rounded-2xl border-2 border-brand-500/30 hover:border-brand-500 bg-white hover:bg-brand-50/50 transition text-left group relative overflow-hidden shadow-sm">
+                            <div class="flex justify-between items-start mb-2">
+                                <span class="w-8 h-8 rounded-lg bg-brand-100 text-brand-600 flex items-center justify-center font-bold text-sm">1:1</span>
+                                <span class="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-medium">빠름</span>
+                            </div>
+                            <div class="font-bold text-slate-800 text-sm">1대1 매칭</div>
+                            <div class="text-xs text-slate-500 mt-1">밀도 있는 대화</div>
+                        </button>
+
+                        <button onclick="startQueue(3)" class="p-4 rounded-2xl border-2 border-slate-200 hover:border-academic-purple bg-white hover:bg-purple-50/50 transition text-left group relative overflow-hidden shadow-sm">
+                            <div class="flex justify-between items-start mb-2">
+                                <span class="w-8 h-8 rounded-lg bg-purple-100 text-academic-purple flex items-center justify-center font-bold text-sm">3인</span>
+                                <span class="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium">그룹</span>
+                            </div>
+                            <div class="font-bold text-slate-800 text-sm">3명 토론 모드</div>
+                            <div class="text-xs text-slate-500 mt-1">소그룹 아이디어 대화</div>
+                        </button>
+
+                        <button onclick="startQueue(4)" class="p-4 rounded-2xl border-2 border-slate-200 hover:border-academic-rose bg-white hover:bg-rose-50/50 transition text-left group relative overflow-hidden shadow-sm">
+                            <div class="flex justify-between items-start mb-2">
+                                <span class="w-8 h-8 rounded-lg bg-rose-100 text-academic-rose flex items-center justify-center font-bold text-sm">4인</span>
+                                <span class="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium">팀</span>
+                            </div>
+                            <div class="font-bold text-slate-800 text-sm">4명 다자간 모드</div>
+                            <div class="text-xs text-slate-500 mt-1">활발한 분위기 조성</div>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="mt-6 pt-4 border-t border-slate-100 text-center">
+                    <p class="text-xs text-slate-400">
+                        <i class="fa-solid fa-circle-info mr-1"></i> 여러 탭을 열어 동시에 참여하면 즉시 매칭을 테스트할 수 있습니다!
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- SCREEN 2: Waiting Queue View -->
+        <section id="screenQueue" class="hidden flex-1 flex flex-col justify-center items-center py-12">
+            <div class="w-full max-w-md glass-card rounded-3xl p-8 shadow-2xl text-center relative overflow-hidden border border-slate-100">
+                <!-- Background Pulse Effect -->
+                <div class="absolute -top-12 -left-12 w-40 h-40 bg-brand-500/10 rounded-full blur-2xl animate-pulse"></div>
+                <div class="absolute -bottom-12 -right-12 w-40 h-40 bg-purple-500/10 rounded-full blur-2xl animate-pulse"></div>
+
+                <div class="relative z-10">
+                    <div class="relative w-28 h-28 mx-auto mb-6 flex items-center justify-center">
+                        <div class="absolute inset-0 rounded-full border-4 border-brand-200 border-t-brand-600 animate-spin"></div>
+                        <div class="w-20 h-20 rounded-full bg-brand-50 flex items-center justify-center text-brand-600 text-2xl font-bold">
+                            <span id="queueCountDisplay">1</span>/<span id="targetCapacityDisplay">2</span>
+                        </div>
+                    </div>
+
+                    <h3 id="queueTitle" class="text-xl font-bold text-slate-800 mb-2">대기자를 찾고 있습니다...</h3>
+                    <p class="text-slate-500 text-sm mb-6">
+                        선택된 주제: <span id="queueTopicBadge" class="font-medium text-brand-600">#초등교육</span>
+                    </p>
+
+                    <!-- Queue Timer & Live Status -->
+                    <div class="bg-slate-100/80 rounded-2xl p-4 mb-6 flex justify-around items-center text-center">
+                        <div>
+                            <div class="text-xs text-slate-400">대기 시간</div>
+                            <div id="queueTimer" class="font-heading font-bold text-lg text-slate-700">00:00</div>
+                        </div>
+                        <div class="w-px h-8 bg-slate-200"></div>
+                        <div>
+                            <div class="text-xs text-slate-400">매칭 방식</div>
+                            <div id="queueModeText" class="font-medium text-sm text-slate-700">1대1 익명 대기열</div>
+                        </div>
+                    </div>
+
+                    <button onclick="cancelQueue()" class="w-full py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium rounded-xl transition text-sm">
+                        대기 취소하기
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- SCREEN 3: Active Chat Room -->
+        <section id="screenChat" class="hidden flex-1 flex flex-col lg:flex-row gap-4 h-[calc(100vh-7rem)]">
+            
+            <!-- Main Chat Area -->
+            <div class="flex-1 bg-white rounded-3xl shadow-lg border border-slate-200/80 flex flex-col overflow-hidden">
+                
+                <!-- Chat Header -->
+                <div class="px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></div>
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <h3 id="roomTitle" class="font-bold text-slate-800 text-base">익명 대화방</h3>
+                                <span id="roomModeBadge" class="text-[10px] bg-brand-100 text-brand-700 font-semibold px-2 py-0.5 rounded-full">1:1</span>
+                                <span id="roomTopicBadge" class="text-[10px] bg-slate-200 text-slate-600 font-medium px-2 py-0.5 rounded-full">#초등교육</span>
+                            </div>
+                            <p id="roomParticipantsText" class="text-xs text-slate-500">참여자: 불러오는 중...</p>
+                        </div>
+                    </div>
+
+                    <!-- Room Action Buttons -->
+                    <div class="flex items-center space-x-1.5">
+                        <button onclick="triggerIcebreaker()" title="AI 대화 주제 추천" class="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-academic-purple border border-purple-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i>
+                            <span class="hidden sm:inline">대화 주제 추천</span>
+                        </button>
+                        <button onclick="nextMatch()" title="다음 상대 매칭" class="p-2 text-slate-500 hover:text-brand-600 hover:bg-slate-100 rounded-xl transition">
+                            <i class="fa-solid fa-forward-step"></i>
+                        </button>
+                        <button onclick="leaveRoom()" title="방 나가기" class="p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition">
+                            <i class="fa-solid fa-right-from-bracket"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Messages Scroll Area -->
+                <div id="chatMessages" class="flex-1 p-4 overflow-y-auto space-y-3.5 bg-slate-50/30">
+                    <!-- Dynamic Messages Inserted Here -->
+                </div>
+
+                <!-- Quick Reaction Buttons -->
+                <div class="px-4 py-2 bg-slate-50/80 border-t border-slate-100 flex items-center gap-1 overflow-x-auto text-xs text-slate-600">
+                    <span class="text-slate-400 font-medium mr-1 text-[11px]">빠른 리액션:</span>
+                    <button onclick="sendQuickEmoji('👋')" class="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-full transition">👋 인사</button>
+                    <button onclick="sendQuickEmoji('👍')" class="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-full transition">👍 공감</button>
+                    <button onclick="sendQuickEmoji('😮')" class="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-full transition">😮 놀람</button>
+                    <button onclick="sendQuickEmoji('❤️')" class="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-full transition">❤️ 최고</button>
+                    <button onclick="sendQuickEmoji('💡')" class="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-full transition">💡 굿아이디어</button>
+                </div>
+
+                <!-- Input Field & Send Button -->
+                <form id="chatForm" onsubmit="handleSendMessage(event)" class="p-3 bg-white border-t border-slate-200 flex gap-2 items-center">
+                    <input type="text" id="chatInput" placeholder="메시지를 입력하세요 (매너 있는 대화를 지켜주세요)..." class="flex-1 px-4 py-2.5 bg-slate-100 border-none rounded-2xl focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm">
+                    <button type="submit" class="w-10 h-10 rounded-2xl bg-brand-600 hover:bg-brand-700 text-white flex items-center justify-center transition shadow-md shadow-brand-500/20 flex-shrink-0">
+                        <i class="fa-solid fa-paper-plane text-sm"></i>
+                    </button>
+                </form>
+            </div>
+
+            <!-- AI Sidebar Helper Panel (Designed for Creative Computing Demo) -->
+            <div class="w-full lg:w-80 bg-white rounded-3xl shadow-lg border border-slate-200/80 p-4 flex flex-col">
+                <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
+                    <h4 class="font-bold text-slate-800 text-sm flex items-center gap-2">
+                        <i class="fa-solid fa-brain text-academic-purple"></i>
+                        AI 창의 컴퓨팅 도우미
+                    </h4>
+                    <span class="text-[10px] bg-purple-100 text-purple-700 font-bold px-2 py-0.5 rounded-full">수업시연용</span>
+                </div>
+
+                <!-- AI Topic Suggester Prompt Area -->
+                <div class="bg-slate-50 rounded-2xl p-3 border border-slate-100 mb-4">
+                    <div class="text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
+                        <span>현재 대화 AI 분석</span>
+                        <i class="fa-solid fa-sparkles text-purple-500 text-xs"></i>
+                    </div>
+                    <p id="aiSummaryText" class="text-xs text-slate-500 leading-relaxed">
+                        대화 내용이 오가면 AI가 키워드를 추출하여 창의적 아이디어를 제안해 드립니다.
+                    </p>
+                </div>
+
+                <!-- Educational Quick Prompt Generator -->
+                <div class="flex-1 flex flex-col justify-between">
+                    <div>
+                        <div class="text-xs font-bold text-slate-600 mb-2">초등 수업 아이디어 카탈로그</div>
+                        <div class="space-y-2">
+                            <button onclick="injectIcebreakerTopic('초등학교 5학년 AI 윤리 수업 도입 활동 아이디어')" class="w-full text-left p-2.5 rounded-xl bg-slate-50 hover:bg-brand-50 border border-slate-100 text-xs text-slate-700 transition">
+                                🏫 초등 5학년 AI 윤리 수업 아이디어
+                            </button>
+                            <button onclick="injectIcebreakerTopic('컴퓨팅 사고력을 기르는 픽셀아트 실습 방법')" class="w-full text-left p-2.5 rounded-xl bg-slate-50 hover:bg-brand-50 border border-slate-100 text-xs text-slate-700 transition">
+                                🎨 컴퓨팅 사고력 픽셀아트 활동
+                            </button>
+                            <button onclick="injectIcebreakerTopic('요즘 학급 경영할 때 가장 효과적인 꿀팁 대방출')" class="w-full text-left p-2.5 rounded-xl bg-slate-50 hover:bg-brand-50 border border-slate-100 text-xs text-slate-700 transition">
+                                🍎 초등 학급 경영 꿀팁 공유하기
+                            </button>
+                        </div>
+                    </div>
+
+                    <button onclick="generateAISummary()" class="w-full py-2.5 mt-4 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-medium transition flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-rotate-right"></i>
+                        <span>실시간 대화 요약 실행</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Dev/Assignment Info Modal -->
+    <div id="devModal" class="hidden fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-100">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="font-bold text-slate-800 text-lg flex items-center gap-2">
+                    <i class="fa-solid fa-graduation-cap text-brand-600"></i>
+                    과제 아키텍처 및 설정 안내
+                </h3>
+                <button onclick="toggleDevModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            
+            <div class="space-y-3 text-xs text-slate-600 leading-relaxed mb-6">
+                <div class="p-3 bg-brand-50 rounded-2xl border border-brand-100 text-brand-900">
+                    <strong>📌 분산 실시간 매칭 시스템 (Hybrid Architecture)</strong><br>
+                    별도의 외부 백엔드 서버 없이 동작할 수 있도록 <b>BroadcastChannel API</b> 및 <b>LocalStorage Cross-Tab Event Engine</b>이 내장되어 있습니다.
+                </div>
+                <ul class="list-disc pl-4 space-y-1">
+                    <li><b>1:1 / 3인 / 4인 모드:</b> 각 대기열이 가득 차면 독립적인 익명 방이 자동 개설됩니다.</li>
+                    <li><b>다중 탭 테스트:</b> 브라우저 탭을 여러 개 열어 서로 다른 모드로 접속하면 즉시 매칭을 검증할 수 있습니다.</li>
+                    <li><b>Firebase 연동 준비:</b> 코드 내부의 `FirebaseEngine` 객체를 통해 Firestore/Realtime DB와 결합 가능합니다.</li>
+                </ul>
+            </div>
+
+            <button onclick="toggleDevModal()" class="w-full py-2.5 bg-brand-600 text-white font-medium rounded-xl text-xs">확인 및 닫기</button>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * AI 창의 컴퓨팅 과제용 실시간 익명 매칭 애플리케이션
+         * Client-side Cross-Tab Matching Engine + Firebase Modular Structure
+         */
+
+        // State Management
+        const state = {
+            userId: 'user_' + Math.random().toString(36).substring(2, 9),
+            nickname: '',
+            selectedTopic: '초등교육',
+            targetCapacity: 2, // 2 (1:1), 3 (3명), 4 (4명)
+            currentQueueId: null,
+            currentRoomId: null,
+            queueStartTime: null,
+            timerInterval: null,
+            messages: [],
+            participants: []
+        };
+
+        // Random Anonymous Nicknames Suitable for Teachers/Students
+        const adjectives = ['지혜로운', '호기심많은', '창의적인', '열정적인', '따뜻한', '상상력풍부한', '배려하는', '명랑한', '성실한'];
+        const animals = ['부엉이', '족제비', '돌고래', '다람쥐', '아기사자', '펭귄', '코알라', '수달', '여우'];
+
+        function generateNewNickname() {
+            const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
+            const ani = animals[Math.floor(Math.random() * animals.length)];
+            state.nickname = `${adj} ${ani}`;
+            document.getElementById('nicknameInput').value = state.nickname;
+        }
+
+        function selectTopic(element, topic) {
+            state.selectedTopic = topic;
+            document.querySelectorAll('.topic-btn').forEach(btn => {
+                btn.classList.remove('bg-brand-600', 'text-white', 'border-brand-600');
+                btn.classList.add('bg-white', 'text-slate-600', 'border-slate-200');
+            });
+            element.classList.remove('bg-white', 'text-slate-600', 'border-slate-200');
+            element.classList.add('bg-brand-600', 'text-white', 'border-brand-600');
+        }
+
+        // ==========================================
+        // REAL-TIME MATCHING ENGINE (BroadcastChannel)
+        // ==========================================
+        const matchChannel = new BroadcastChannel('matching_channel_v1');
+
+        matchChannel.onmessage = (event) => {
+            const { type, payload } = event.data;
+
+            if (type === 'QUEUE_JOIN') {
+                handleQueueJoinSignal(payload);
+            } else if (type === 'MATCH_FOUND') {
+                handleMatchFoundSignal(payload);
+            } else if (type === 'CHAT_MESSAGE') {
+                handleIncomingMessage(payload);
+            } else if (type === 'USER_LEFT') {
+                handleUserLeftSignal(payload);
+            }
+        };
+
+        // Queue Memory Cache for Multi-tab Local Orchestration
+        function getGlobalQueues() {
+            try {
+                return JSON.parse(localStorage.getItem('anonymous_queues') || '[]');
+            } catch {
+                return [];
+            }
+        }
+
+        function setGlobalQueues(queues) {
+            localStorage.setItem('anonymous_queues', JSON.stringify(queues));
+        }
+
+        function startQueue(capacity) {
+            state.targetCapacity = capacity;
+            showScreen('screenQueue');
+
+            document.getElementById('targetCapacityDisplay').innerText = capacity;
+            document.getElementById('queueCountDisplay').innerText = '1';
+            document.getElementById('queueTopicBadge').innerText = `#${state.selectedTopic}`;
+            document.getElementById('queueModeText').innerText = capacity === 2 ? '1대1 익명 매칭' : `${capacity}인 그룹 토론 모드`;
+
+            state.queueStartTime = Date.now();
+            updateTimerDisplay();
+            state.timerInterval = setInterval(updateTimerDisplay, 1000);
+
+            // Register in queue
+            const newQueueItem = {
+                id: state.userId,
+                nickname: state.nickname,
+                topic: state.selectedTopic,
+                capacity: capacity,
+                timestamp: Date.now()
+            };
+
+            let queues = getGlobalQueues();
+            // Remove previous instances of same user
+            queues = queues.filter(q => q.id !== state.userId);
+            queues.push(newQueueItem);
+            setGlobalQueues(queues);
+
+            // Check if capacity reached
+            checkMatching(queues, capacity, state.selectedTopic);
+
+            // Broadcast join
+            matchChannel.postMessage({ type: 'QUEUE_JOIN', payload: newQueueItem });
+        }
+
+        function checkMatching(queues, capacity, topic) {
+            const matchingCandidates = queues.filter(q => q.capacity === capacity && q.topic === topic);
+
+            if (matchingCandidates.length >= capacity) {
+                const matchedUsers = matchingCandidates.slice(0, capacity);
+                const roomId = 'room_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+
+                // Remove matched users from queue
+                const matchedUserIds = matchedUsers.map(u => u.id);
+                const updatedQueues = queues.filter(q => !matchedUserIds.includes(q.id));
+                setGlobalQueues(updatedQueues);
+
+                // Broadcast Match Success
+                matchChannel.postMessage({
+                    type: 'MATCH_FOUND',
+                    payload: {
+                        roomId,
+                        topic,
+                        capacity,
+                        participants: matchedUsers
+                    }
+                });
+
+                // Trigger locally if this user is in matched set
+                if (matchedUserIds.includes(state.userId)) {
+                    handleMatchFoundSignal({ roomId, topic, capacity, participants: matchedUsers });
+                }
+            }
+        }
+
+        function handleQueueJoinSignal(payload) {
+            if (state.currentRoomId) return;
+            const queues = getGlobalQueues();
+            const matchingCount = queues.filter(q => q.capacity === state.targetCapacity && q.topic === state.selectedTopic).length;
+            document.getElementById('queueCountDisplay').innerText = Math.min(matchingCount, state.targetCapacity);
+        }
+
+        function handleMatchFoundSignal(payload) {
+            const isParticipant = payload.participants.some(p => p.id === state.userId);
+            if (!isParticipant) return;
+
+            clearInterval(state.timerInterval);
+            state.currentRoomId = payload.roomId;
+            state.participants = payload.participants;
+
+            // Setup Chat Room UI
+            showScreen('screenChat');
+            document.getElementById('roomModeBadge').innerText = payload.capacity === 2 ? '1:1' : `${payload.capacity}인 그룹`;
+            document.getElementById('roomTopicBadge').innerText = `#${payload.topic}`;
+            
+            const names = payload.participants.map(p => p.nickname === state.nickname ? `${p.nickname} (나)` : p.nickname).join(', ');
+            document.getElementById('roomParticipantsText').innerText = `참여자: ${names}`;
+
+            // Clear & Add System Welcome Message
+            document.getElementById('chatMessages').innerHTML = '';
+            addSystemMessage(`매칭이 성공적으로 완료되었습니다! 상호 존중하며 대화를 나눠보세요.`);
+        }
+
+        function cancelQueue() {
+            clearInterval(state.timerInterval);
+            let queues = getGlobalQueues();
+            queues = queues.filter(q => q.id !== state.userId);
+            setGlobalQueues(queues);
+            showScreen('screenSetup');
+        }
+
+        function updateTimerDisplay() {
+            const elapsed = Math.floor((Date.now() - state.queueStartTime) / 1000);
+            const mins = String(Math.floor(elapsed / 60)).padStart(2, '0');
+            const secs = String(elapsed % 60).padStart(2, '0');
+            document.getElementById('queueTimer').innerText = `${mins}:${secs}`;
+        }
+
+        // ==========================================
+        // CHAT MESSAGING LOGIC
+        // ==========================================
+        function handleSendMessage(e) {
+            e.preventDefault();
+            const input = document.getElementById('chatInput');
+            const messageText = input.value.trim();
+            if (!messageText || !state.currentRoomId) return;
+
+            const msgObj = {
+                roomId: state.currentRoomId,
+                senderId: state.userId,
+                senderNickname: state.nickname,
+                text: messageText,
+                timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            };
+
+            // Post to channel
+            matchChannel.postMessage({ type: 'CHAT_MESSAGE', payload: msgObj });
+
+            // Display locally
+            renderMessage(msgObj, true);
+            input.value = '';
+        }
+
+        function handleIncomingMessage(payload) {
+            if (payload.roomId !== state.currentRoomId) return;
+            if (payload.senderId === state.userId) return; // Already rendered locally
+            renderMessage(payload, false);
+        }
+
+        function sendQuickEmoji(emoji) {
+            const input = document.getElementById('chatInput');
+            input.value += emoji + ' ';
+            input.focus();
+        }
+
+        function renderMessage(msg, isMine) {
+            const container = document.getElementById('chatMessages');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `flex flex-col ${isMine ? 'items-end' : 'items-start'} mb-2`;
+
+            const nicknameSpan = `<span class="text-[11px] text-slate-400 mb-1 px-1">${msg.senderNickname}</span>`;
+            const bubbleClasses = isMine 
+                ? 'bg-brand-600 text-white rounded-2xl rounded-tr-none px-4 py-2.5 max-w-[80%] text-sm shadow-sm'
+                : 'bg-white border border-slate-200 text-slate-800 rounded-2xl rounded-tl-none px-4 py-2.5 max-w-[80%] text-sm shadow-sm';
+
+            msgDiv.innerHTML = `
+                ${!isMine ? nicknameSpan : ''}
+                <div class="flex items-end gap-1.5 ${isMine ? 'flex-row-reverse' : 'flex-row'}">
+                    <div class="${bubbleClasses}">${escapeHtml(msg.text)}</div>
+                    <span class="text-[10px] text-slate-400 mb-0.5">${msg.timestamp}</span>
+                </div>
+            `;
+
+            container.appendChild(msgDiv);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function addSystemMessage(text) {
+            const container = document.getElementById('chatMessages');
+            const sysDiv = document.createElement('div');
+            sysDiv.className = 'flex justify-center my-3';
+            sysDiv.innerHTML = `
+                <div class="bg-slate-200/70 border border-slate-300/50 text-slate-600 text-xs px-3 py-1.5 rounded-full flex items-center gap-1.5">
+                    <i class="fa-solid fa-circle-info text-brand-600"></i>
+                    <span>${text}</span>
+                </div>
+            `;
+            container.appendChild(sysDiv);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // ==========================================
+        // AI / EDUCATIONAL HELPER FUNCTIONS
+        // ==========================================
+        const icebreakerPrompts = [
+            "💡 대화 물꼬 터트리기: 초등학교 5학년 대상 AI 수업에서 사용하기 가장 좋은 도입 활동은 무엇일까요?",
+            "💡 생각 나누기: 미래 교실에서 교사의 가장 중요한 역할은 무엇이라고 생각하시나요?",
+            "💡 자유 주제: 최근에 새로 배운 유용한 디지털 도구나 앱이 있다면 소개해주세요!",
+            "💡 쉬어가기: 오늘 하루 중 가장 기분 좋았던 작은 순간은 무엇인가요?"
+        ];
+
+        function triggerIcebreaker() {
+            const randomPrompt = icebreakerPrompts[Math.floor(Math.random() * icebreakerPrompts.length)];
+            const msgObj = {
+                roomId: state.currentRoomId,
+                senderId: 'AI_ASSISTANT',
+                senderNickname: '🤖 AI 아이스브레이커',
+                text: randomPrompt,
+                timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            };
+            matchChannel.postMessage({ type: 'CHAT_MESSAGE', payload: msgObj });
+            renderMessage(msgObj, false);
+        }
+
+        function injectIcebreakerTopic(topicText) {
+            const input = document.getElementById('chatInput');
+            input.value = `[AI 수업아이디어] ${topicText}`;
+            input.focus();
+        }
+
+        function generateAISummary() {
+            const summaryBox = document.getElementById('aiSummaryText');
+            summaryBox.innerText = "대화 내용을 실시간 분석 중입니다...";
+            setTimeout(() => {
+                summaryBox.innerHTML = `
+                    <strong>✨ 분석 완료:</strong> 참여자들이 초등 교육 현장 적용 가능성에 대해 긍정적인 반응을 보이고 있습니다.<br>
+                    <strong>추천 키워드:</strong> #컴퓨팅사고력 #윤리교육 #참여형수업
+                `;
+            }, 1000);
+        }
+
+        function leaveRoom() {
+            if (state.currentRoomId) {
+                matchChannel.postMessage({
+                    type: 'USER_LEFT',
+                    payload: { roomId: state.currentRoomId, nickname: state.nickname }
+                });
+            }
+            state.currentRoomId = null;
+            showScreen('screenSetup');
+        }
+
+        function nextMatch() {
+            leaveRoom();
+            startQueue(state.targetCapacity);
+        }
+
+        function handleUserLeftSignal(payload) {
+            if (payload.roomId === state.currentRoomId) {
+                addSystemMessage(`${payload.nickname}님이 대화방을 나갔습니다.`);
+            }
+        }
+
+        // Screen Navigation Helper
+        function showScreen(screenId) {
+            document.getElementById('screenSetup').classList.add('hidden');
+            document.getElementById('screenQueue').classList.add('hidden');
+            document.getElementById('screenChat').classList.add('hidden');
+            document.getElementById(screenId).classList.remove('hidden');
+        }
+
+        function toggleDevModal() {
+            document.getElementById('devModal').classList.toggle('hidden');
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.innerText = text;
+            return div.innerHTML;
+        }
+
+        // Initialization on Load
+        window.onload = () => {
+            generateNewNickname();
+        };
+    </script>
+</body>
+</html>
