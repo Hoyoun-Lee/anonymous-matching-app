@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>익명 1:1 & 그룹 매칭 앱</title>
+    <!-- PubNub Global Realtime Server SDK -->
+    <script src="https://cdn.pubnub.com/sdk/javascript/pubnub.7.2.2.min.js"></script>
+    <style>
+        :root {
+            --primary-color: #4F46E5;
+            --primary-hover: #4338CA;
+            --bg-color: #F3F4F6;
+            --card-bg: #FFFFFF;
+            --text-main: #1F2937;
+            --text-muted: #6B7280;
+            --border-color: #E5E7EB;
+            --chat-my-bg: #4F46E5;
+            --chat-my-text: #FFFFFF;
+            --chat-other-bg: #E5E7EB;
+            --chat-other-text: #1F2937;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 1rem;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 480px;
+            background-color: var(--card-bg);
+            border-radius: 16px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 90vh;
+            max-height: 700px;
+        }
+
+        header {
+            background-color: var(--primary-color);
+            color: white;
+            padding: 1.25rem;
+            text-align: center;
+            font-weight: 700;
+            font-size: 1.2rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .view {
+            display: none;
+            flex-direction: column;
+            height: 100%;
+            padding: 1.5rem;
+            overflow-y: auto;
+        }
+
+        .view.active {
+            display: flex;
+        }
+
+        .lobby-title {
+            font-size: 1.4rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            text-align: center;
+        }
+
+        .lobby-desc {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .nickname-box {
+            background-color: #EEF2FF;
+            border: 1px solid #C7D2FE;
+            padding: 1rem;
+            border-radius: 12px;
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .nickname-label {
+            font-size: 0.8rem;
+            color: #4338CA;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+
+        .nickname-value {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #312E81;
+        }
+
+        .mode-selection {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .btn-mode {
+            background-color: var(--card-bg);
+            border: 2px solid var(--border-color);
+            padding: 1rem;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: left;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .btn-mode:hover {
+            border-color: var(--primary-color);
+            background-color: #F8FAFC;
+        }
+
+        .btn-mode.selected {
+            border-color: var(--primary-color);
+            background-color: #EEF2FF;
+        }
+
+        .mode-info h4 {
+            font-size: 1rem;
+            margin-bottom: 0.2rem;
+        }
+
+        .mode-info p {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        .btn-start {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 1rem;
+            border-radius: 12px;
+            font-size: 1rem;
+            font-weight: 700;
+            cursor: pointer;
+            margin-top: auto;
+            transition: background-color 0.2s;
+        }
+
+        .btn-start:hover {
+            background-color: var(--primary-hover);
+        }
+
+        .waiting-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            text-align: center;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid var(--border-color);
+            border-top: 5px solid var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 1.5rem;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .waiting-status {
+            font-size: 1.2rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .waiting-count {
+            color: var(--primary-color);
+            font-weight: 700;
+        }
+
+        .btn-cancel {
+            background-color: #EF4444;
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 2rem;
+        }
+
+        .chat-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 0.75rem;
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 0.75rem;
+        }
+
+        .chat-room-info {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text-muted);
+        }
+
+        .btn-leave {
+            background-color: #F3F4F6;
+            color: #EF4444;
+            border: 1px solid #FCA5A5;
+            padding: 0.4rem 0.8rem;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .icebreaker-card {
+            background-color: #FEF3C7;
+            border: 1px solid #FCD34D;
+            padding: 0.75rem;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            color: #92400E;
+            margin-bottom: 0.75rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .icebreaker-text {
+            font-weight: 600;
+        }
+
+        .btn-icebreaker-refresh {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            padding-right: 0.25rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .message {
+            display: flex;
+            flex-direction: column;
+            max-width: 80%;
+        }
+
+        .message.my {
+            align-self: flex-end;
+        }
+
+        .message.other {
+            align-self: flex-start;
+        }
+
+        .message.system {
+            align-self: center;
+            max-width: 100%;
+            margin: 0.5rem 0;
+        }
+
+        .system-text {
+            background-color: #F3F4F6;
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+        }
+
+        .msg-sender {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            margin-bottom: 0.1rem;
+            margin-left: 0.25rem;
+        }
+
+        .msg-bubble {
+            padding: 0.6rem 0.9rem;
+            border-radius: 14px;
+            font-size: 0.9rem;
+            word-break: break-word;
+            line-height: 1.4;
+        }
+
+        .message.my .msg-bubble {
+            background-color: var(--chat-my-bg);
+            color: var(--chat-my-text);
+            border-bottom-right-radius: 2px;
+        }
+
+        .message.other .msg-bubble {
+            background-color: var(--chat-other-bg);
+            color: var(--chat-other-text);
+            border-bottom-left-radius: 2px;
+        }
+
+        .chat-input-container {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .chat-input {
+            flex: 1;
+            padding: 0.75rem 1rem;
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            outline: none;
+            font-size: 0.9rem;
+        }
+
+        .chat-input:focus {
+            border-color: var(--primary-color);
+        }
+
+        .btn-send {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <header>익명 실시간 매칭</header>
+
+        <!-- LOBBY VIEW -->
+        <div id="view-lobby" class="view active">
+            <h2 class="lobby-title">새로운 상대를 만나보세요</h2>
+            <p class="lobby-desc">AI 창의 컴퓨팅 실시간 대화 웹 App</p>
+
+            <div class="nickname-box">
+                <div class="nickname-label">당신의 익명 닉네임</div>
+                <div id="user-nickname" class="nickname-value">생성 중...</div>
+            </div>
+
+            <div class="mode-selection">
+                <div class="btn-mode selected" data-mode="1v1" onclick="selectMode('1v1')">
+                    <div class="mode-info">
+                        <h4>1 : 1 매칭</h4>
+                        <p>1명과 1대1로 대화합니다.</p>
+                    </div>
+                    <span>👤👤</span>
+                </div>
+                <div class="btn-mode" data-mode="3group" onclick="selectMode('3group')">
+                    <div class="mode-info">
+                        <h4>3인 그룹 매칭</h4>
+                        <p>총 3명이서 대화합니다.</p>
+                    </div>
+                    <span>👥👥</span>
+                </div>
+                <div class="btn-mode" data-mode="4group" onclick="selectMode('4group')">
+                    <div class="mode-info">
+                        <h4>4인 그룹 매칭</h4>
+                        <p>총 4명이서 대화합니다.</p>
+                    </div>
+                    <span>👨‍👩‍👧‍👦</span>
+                </div>
+            </div>
+
+            <button class="btn-start" onclick="startMatching()">대기열 입장하기</button>
+        </div>
+
+        <!-- WAITING VIEW -->
+        <div id="view-waiting" class="view">
+            <div class="waiting-container">
+                <div class="spinner"></div>
+                <div class="waiting-status">글로벌 서버 연결 중...</div>
+                <p style="color: var(--text-muted); font-size: 0.9rem;">
+                    대기 상태: <span id="waiting-count-val" class="waiting-count">매칭 상대 탐색 중</span>
+                </p>
+                <button class="btn-cancel" onclick="cancelMatching()">매칭 취소</button>
+            </div>
+        </div>
+
+        <!-- CHAT VIEW -->
+        <div id="view-chat" class="view">
+            <div class="chat-header">
+                <div id="chat-room-title" class="chat-room-info">매칭 완료!</div>
+                <button class="btn-leave" onclick="leaveChat()">방 나가기</button>
+            </div>
+
+            <div class="icebreaker-card">
+                <div>💡 <span class="icebreaker-text" id="icebreaker-text">AI 대화 주제 생성 중...</span></div>
+                <button class="btn-icebreaker-refresh" onclick="refreshIcebreaker()" title="다른 주제 보기">🔄</button>
+            </div>
+
+            <div id="chat-messages" class="chat-messages"></div>
+
+            <div class="chat-input-container">
+                <input type="text" id="chat-input" class="chat-input" placeholder="메시지를 입력하세요..." onkeypress="handleKeyPress(event)">
+                <button class="btn-send" onclick="sendMessage()">➤</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- GLOBAL REALTIME SERVER CONFIG (Free Demo Keys) ---
+        const pubnub = new PubNub({
+            publishKey: "pub-c-806b0b2e-07a5-4813-8ebf-2176b610c436",
+            subscribeKey: "sub-c-17e9bb78-b391-4e89-8d5f-e05e55e09440",
+            userId: 'user_' + Math.floor(Math.random() * 1000000)
+        });
+
+        const ADJECTIVES = ['행복한', '즐거운', '상상하는', '창의적인', '스마트한', '용감한', '친절한', '빛나는', '차분한'];
+        const ANIMALS = ['사자', '호랑이', '토끼', '고양이', '강아지', '펭귄', '돌고래', '올빼미', '판다'];
+        const ICEBREAKERS = [
+            "가장 최근에 감명 깊게 본 영화나 드라마는 무엇인가요?",
+            "만약 내일 당장 여행을 갈 수 있다면 어디로 가고 싶으신가요?",
+            "요즘 새로 시작하거나 관심 생긴 취미가 있나요?",
+            "스트레스를 해소할 때 나만의 시크릿 방법은?",
+            "최근 먹었던 음식 중 가장 맛있었던 메뉴는 무엇인가요?"
+        ];
+
+        let state = {
+            userId: pubnub.getUserId(),
+            nickname: '',
+            selectedMode: '1v1',
+            currentRoomId: null
+        };
+
+        window.onload = () => {
+            state.nickname = getRandomNickname();
+            document.getElementById('user-nickname').innerText = state.nickname;
+            setupGlobalListener();
+        };
+
+        function getRandomNickname() {
+            const adj = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
+            const ani = ANIMALS[Math.floor(Math.random() * ANIMALS.length)];
+            return `${adj} ${ani}`;
+        }
+
+        function showView(viewId) {
+            document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
+            document.getElementById(viewId).classList.add('active');
+        }
+
+        function selectMode(mode) {
+            state.selectedMode = mode;
+            document.querySelectorAll('.btn-mode').forEach(btn => {
+                btn.classList.toggle('selected', btn.dataset.mode === mode);
+            });
+        }
+
+        // --- MATCHING SYSTEM ---
+        function startMatching() {
+            showView('view-waiting');
+            const lobbyChannel = 'matching_queue_' + state.selectedMode;
+
+            pubnub.subscribe({ channels: [lobbyChannel] });
+
+            setTimeout(() => {
+                pubnub.publish({
+                    channel: lobbyChannel,
+                    message: {
+                        type: 'JOIN_QUEUE',
+                        userId: state.userId,
+                        nickname: state.nickname
+                    }
+                });
+            }, 500);
+        }
+
+        function cancelMatching() {
+            const lobbyChannel = 'matching_queue_' + state.selectedMode;
+            pubnub.unsubscribe({ channels: [lobbyChannel] });
+            showView('view-lobby');
+        }
+
+        // --- GLOBAL REALTIME EVENT LISTENER ---
+        function setupGlobalListener() {
+            pubnub.addListener({
+                message: (event) => {
+                    const msg = event.message;
+
+                    // 1. 대기열 반응
+                    if (msg.type === 'JOIN_QUEUE') {
+                        if (msg.userId !== state.userId && document.getElementById('view-waiting').classList.contains('active')) {
+                            const targetCount = state.selectedMode === '1v1' ? 2 : (state.selectedMode === '3group' ? 3 : 4);
+                            const roomId = 'room_' + Math.floor(Date.now() / 10000); // 일정 시간 단위 공통 룸ID 생성
+
+                            pubnub.publish({
+                                channel: 'matching_queue_' + state.selectedMode,
+                                message: {
+                                    type: 'MATCH_START',
+                                    roomId: roomId
+                                }
+                            });
+                        }
+                    } 
+                    else if (msg.type === 'MATCH_START') {
+                        if (document.getElementById('view-waiting').classList.contains('active')) {
+                            enterChatRoom(msg.roomId);
+                        }
+                    }
+                    // 2. 채팅 메시지 반응
+                    else if (msg.type === 'CHAT') {
+                        if (msg.roomId === state.currentRoomId) {
+                            renderMessage(
+                                msg.text,
+                                msg.senderId === state.userId ? 'my' : 'other',
+                                msg.senderNick
+                            );
+                        }
+                    }
+                    else if (msg.type === 'LEAVE') {
+                        if (msg.roomId === state.currentRoomId && msg.senderId !== state.userId) {
+                            renderSystemMessage(`${msg.senderNick} 님이 퇴장하셨습니다.`);
+                        }
+                    }
+                }
+            });
+        }
+
+        // --- CHAT SYSTEM ---
+        function enterChatRoom(roomId) {
+            state.currentRoomId = roomId;
+            showView('view-chat');
+            document.getElementById('chat-messages').innerHTML = '';
+
+            const modeText = state.selectedMode === '1v1' ? '1대1' : (state.selectedMode === '3group' ? '3인 그룹' : '4인 그룹');
+            document.getElementById('chat-room-title').innerText = `${modeText} 실시간 채팅방`;
+
+            pubnub.subscribe({ channels: [roomId] });
+
+            refreshIcebreaker();
+            renderSystemMessage('다른 기기와 전 세계 실시간 연결되었습니다!');
+        }
+
+        function sendMessage() {
+            const inputEl = document.getElementById('chat-input');
+            const text = inputEl.value.trim();
+            if (!text || !state.currentRoomId) return;
+
+            pubnub.publish({
+                channel: state.currentRoomId,
+                message: {
+                    type: 'CHAT',
+                    roomId: state.currentRoomId,
+                    senderId: state.userId,
+                    senderNick: state.nickname,
+                    text: text
+                }
+            });
+
+            inputEl.value = '';
+        }
+
+        function handleKeyPress(e) {
+            if (e.key === 'Enter') sendMessage();
+        }
+
+        function renderMessage(text, type, senderNick) {
+            const container = document.getElementById('chat-messages');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `message ${type}`;
+
+            if (type === 'other') {
+                const senderDiv = document.createElement('div');
+                senderDiv.className = 'msg-sender';
+                senderDiv.innerText = senderNick;
+                msgDiv.appendChild(senderDiv);
+            }
+
+            const bubbleDiv = document.createElement('div');
+            bubbleDiv.className = 'msg-bubble';
+            bubbleDiv.innerText = text;
+            msgDiv.appendChild(bubbleDiv);
+
+            container.appendChild(msgDiv);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function renderSystemMessage(text) {
+            const container = document.getElementById('chat-messages');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'message system';
+            msgDiv.innerHTML = `<span class="system-text">${text}</span>`;
+            container.appendChild(msgDiv);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function refreshIcebreaker() {
+            const randomTopic = ICEBREAKERS[Math.floor(Math.random() * ICEBREAKERS.length)];
+            document.getElementById('icebreaker-text').innerText = randomTopic;
+        }
+
+        function leaveChat() {
+            if (confirm('정말 채팅방을 나가시겠습니까?')) {
+                if (state.currentRoomId) {
+                    pubnub.publish({
+                        channel: state.currentRoomId,
+                        message: {
+                            type: 'LEAVE',
+                            roomId: state.currentRoomId,
+                            senderId: state.userId,
+                            senderNick: state.nickname
+                        }
+                    });
+                    pubnub.unsubscribe({ channels: [state.currentRoomId] });
+                }
+                state.currentRoomId = null;
+                showView('view-lobby');
+            }
+        }
+    </script>
+</body>
+</html>
