@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>익명 1:1 & 그룹 매칭 앱</title>
+    <!-- Firebase Realtime Database SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+    <style>
+        :root {
+            --primary-color: #4F46E5;
+            --primary-hover: #4338CA;
+            --bg-color: #F3F4F6;
+            --card-bg: #FFFFFF;
+            --text-main: #1F2937;
+            --text-muted: #6B7280;
+            --border-color: #E5E7EB;
+            --chat-my-bg: #4F46E5;
+            --chat-my-text: #FFFFFF;
+            --chat-other-bg: #E5E7EB;
+            --chat-other-text: #1F2937;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        body { background-color: var(--bg-color); color: var(--text-main); display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 1rem; }
+        .container { width: 100%; max-width: 480px; background-color: var(--card-bg); border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); overflow: hidden; display: flex; flex-direction: column; height: 90vh; max-height: 700px; }
+        header { background-color: var(--primary-color); color: white; padding: 1.25rem; text-align: center; font-weight: 700; font-size: 1.2rem; }
+        .view { display: none; flex-direction: column; height: 100%; padding: 1.5rem; overflow-y: auto; }
+        .view.active { display: flex; }
+        .lobby-title { font-size: 1.4rem; font-weight: 700; margin-bottom: 0.5rem; text-align: center; }
+        .lobby-desc { color: var(--text-muted); font-size: 0.9rem; text-align: center; margin-bottom: 1.5rem; }
+        .nickname-box { background-color: #EEF2FF; border: 1px solid #C7D2FE; padding: 1rem; border-radius: 12px; text-align: center; margin-bottom: 1.5rem; }
+        .nickname-label { font-size: 0.8rem; color: #4338CA; font-weight: 600; }
+        .nickname-value { font-size: 1.2rem; font-weight: 700; color: #312E81; }
+        .mode-selection { display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1.5rem; }
+        .btn-mode { background-color: var(--card-bg); border: 2px solid var(--border-color); padding: 1rem; border-radius: 12px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+        .btn-mode.selected { border-color: var(--primary-color); background-color: #EEF2FF; }
+        .btn-start { background-color: var(--primary-color); color: white; border: none; padding: 1rem; border-radius: 12px; font-size: 1rem; font-weight: 700; cursor: pointer; margin-top: auto; }
+        .waiting-container { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; text-align: center; }
+        .spinner { width: 50px; height: 50px; border: 5px solid var(--border-color); border-top: 5px solid var(--primary-color); border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 1.5rem; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .btn-cancel { background-color: #EF4444; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 8px; font-weight: 600; cursor: pointer; margin-top: 2rem; }
+        .chat-header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border-color); margin-bottom: 0.75rem; }
+        .btn-leave { background-color: #F3F4F6; color: #EF4444; border: 1px solid #FCA5A5; padding: 0.4rem 0.8rem; border-radius: 6px; font-size: 0.8rem; font-weight: 600; cursor: pointer; }
+        .chat-messages { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.75rem; }
+        .message { display: flex; flex-direction: column; max-width: 80%; }
+        .message.my { align-self: flex-end; }
+        .message.other { align-self: flex-start; }
+        .message.system { align-self: center; max-width: 100%; margin: 0.5rem 0; }
+        .system-text { background-color: #F3F4F6; color: var(--text-muted); font-size: 0.75rem; padding: 0.25rem 0.75rem; border-radius: 12px; }
+        .msg-sender { font-size: 0.7rem; color: var(--text-muted); margin-bottom: 0.1rem; }
+        .msg-bubble { padding: 0.6rem 0.9rem; border-radius: 14px; font-size: 0.9rem; word-break: break-word; }
+        .message.my .msg-bubble { background-color: var(--chat-my-bg); color: var(--chat-my-text); }
+        .message.other .msg-bubble { background-color: var(--chat-other-bg); color: var(--chat-other-text); }
+        .chat-input-container { display: flex; gap: 0.5rem; }
+        .chat-input { flex: 1; padding: 0.75rem 1rem; border: 1px solid var(--border-color); border-radius: 24px; outline: none; }
+        .btn-send { background-color: var(--primary-color); color: white; border: none; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <header>익명 실시간 매칭</header>
+
+        <!-- LOBBY VIEW -->
+        <div id="view-lobby" class="view active">
+            <h2 class="lobby-title">새로운 상대를 만나보세요</h2>
+            <p class="lobby-desc">실시간 1:1 & 그룹 익명 대화</p>
+
+            <div class="nickname-box">
+                <div class="nickname-label">당신의 익명 닉네임</div>
+                <div id="user-nickname" class="nickname-value">생성 중...</div>
+            </div>
+
+            <div class="mode-selection">
+                <div class="btn-mode selected" data-mode="1v1" onclick="selectMode('1v1')">
+                    <div><b>1 : 1 매칭</b><p style="font-size:0.8rem; color:gray;">2명 대화</p></div>
+                    <span>👤👤</span>
+                </div>
+            </div>
+
+            <button class="btn-start" onclick="startMatching()">대기열 입장하기</button>
+        </div>
+
+        <!-- WAITING VIEW -->
+        <div id="view-waiting" class="view">
+            <div class="waiting-container">
+                <div class="spinner"></div>
+                <div style="font-size:1.2rem; font-weight:700;">매칭 상대 탐색 중...</div>
+                <p style="color:gray; font-size:0.9rem; margin-top:0.5rem;">다른 기기에서 접속을 기다리고 있습니다.</p>
+                <button class="btn-cancel" onclick="cancelMatching()">매칭 취소</button>
+            </div>
+        </div>
+
+        <!-- CHAT VIEW -->
+        <div id="view-chat" class="view">
+            <div class="chat-header">
+                <div id="chat-room-title" style="font-size:0.9rem; font-weight:600;">실시간 채팅방</div>
+                <button class="btn-leave" onclick="leaveChat()">방 나가기</button>
+            </div>
+
+            <div id="chat-messages" class="chat-messages"></div>
+
+            <div class="chat-input-container">
+                <input type="text" id="chat-input" class="chat-input" placeholder="메시지를 입력하세요..." onkeypress="if(event.key==='Enter') sendMessage()">
+                <button class="btn-send" onclick="sendMessage()">➤</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 공용 실시간 데모 서버 설정
+        const firebaseConfig = {
+            databaseURL: "https://matching-app-demo-default-rtdb.firebaseio.com"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        const ADJECTIVES = ['행복한', '즐거운', '상상하는', '창의적인', '스마트한'];
+        const ANIMALS = ['사자', '호랑이', '토끼', '고양이', '강아지'];
+
+        let myUserId = 'user_' + Math.random().toString(36).substr(2, 9);
+        let myNickname = '';
+        let currentRoomId = null;
+        let queueRef = null;
+        let matchListener = null;
+
+        window.onload = () => {
+            myNickname = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)] + ' ' + ANIMALS[Math.floor(Math.random() * ANIMALS.length)];
+            document.getElementById('user-nickname').innerText = myNickname;
+        };
+
+        function showView(viewId) {
+            document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
+            document.getElementById(viewId).classList.add('active');
+        }
+
+        function selectMode(mode) {
+            document.querySelectorAll('.btn-mode').forEach(btn => btn.classList.add('selected'));
+        }
+
+        // --- 매칭 시작 (서버 중앙 대기열) ---
+        function startMatching() {
+            showView('view-waiting');
+            queueRef = db.ref('queue/1v1').child(myUserId);
+
+            // 1. 내 정보를 대기열에 등록
+            queueRef.set({
+                userId: myUserId,
+                nickname: myNickname,
+                joinedAt: Date.now()
+            });
+
+            // 창을 닫거나 이탈 시 대기열 자동 삭제
+            queueRef.onDisconnect().remove();
+
+            // 2. 전체 대기열 감시
+            matchListener = db.ref('queue/1v1').on('value', (snapshot) => {
+                const users = snapshot.val();
+                if (!users) return;
+
+                const userKeys = Object.keys(users);
+
+                // 대기자가 2명 이상이면 매칭 처리
+                if (userKeys.length >= 2) {
+                    const firstUser = userKeys[0];
+                    const secondUser = userKeys[1];
+
+                    // 방 생성 규칙 (두 유저 ID 조합으로 유일한 방 생성)
+                    const roomId = 'room_' + [firstUser, secondUser].sort().join('_');
+
+                    if (myUserId === firstUser || myUserId === secondUser) {
+                        // 대기열에서 내 정보 삭제 후 채팅방 입장
+                        queueRef.remove();
+                        db.ref('queue/1v1').off('value', matchListener);
+                        enterChatRoom(roomId);
+                    }
+                }
+            });
+        }
+
+        // --- 매칭 취소 (즉시 취소 완벽 구현) ---
+        function cancelMatching() {
+            if (queueRef) {
+                queueRef.remove(); // 서버 DB에서 내 대기열 정보 삭제
+            }
+            if (matchListener) {
+                db.ref('queue/1v1').off('value', matchListener); // 감시 해제
+            }
+            showView('view-lobby');
+        }
+
+        // --- 채팅방 입장 ---
+        function enterChatRoom(roomId) {
+            currentRoomId = roomId;
+            showView('view-chat');
+            document.getElementById('chat-messages').innerHTML = '';
+
+            renderSystemMessage('상대방과 실시간 연결되었습니다!');
+
+            // 메시지 수신 감시
+            db.ref('rooms/' + currentRoomId + '/messages').on('child_added', (snapshot) => {
+                const msg = snapshot.val();
+                renderMessage(
+                    msg.text,
+                    msg.senderId === myUserId ? 'my' : 'other',
+                    msg.senderNick
+                );
+            });
+        }
+
+        // --- 메시지 전송 ---
+        function sendMessage() {
+            const inputEl = document.getElementById('chat-input');
+            const text = inputEl.value.trim();
+            if (!text || !currentRoomId) return;
+
+            db.ref('rooms/' + currentRoomId + '/messages').push({
+                senderId: myUserId,
+                senderNick: myNickname,
+                text: text,
+                timestamp: Date.now()
+            });
+
+            inputEl.value = '';
+        }
+
+        function renderMessage(text, type, senderNick) {
+            const container = document.getElementById('chat-messages');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `message ${type}`;
+
+            if (type === 'other') {
+                const senderDiv = document.createElement('div');
+                senderDiv.className = 'msg-sender';
+                senderDiv.innerText = senderNick;
+                msgDiv.appendChild(senderDiv);
+            }
+
+            const bubbleDiv = document.createElement('div');
+            bubbleDiv.className = 'msg-bubble';
+            bubbleDiv.innerText = text;
+            msgDiv.appendChild(bubbleDiv);
+
+            container.appendChild(msgDiv);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function renderSystemMessage(text) {
+            const container = document.getElementById('chat-messages');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'message system';
+            msgDiv.innerHTML = `<span class="system-text">${text}</span>`;
+            container.appendChild(msgDiv);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // --- 방 나가기 ---
+        function leaveChat() {
+            if (confirm('정말 채팅방을 나가시겠습니까?')) {
+                if (currentRoomId) {
+                    db.ref('rooms/' + currentRoomId + '/messages').off();
+                }
+                currentRoomId = null;
+                showView('view-lobby');
+            }
+        }
+    </script>
+</body>
+</html>
